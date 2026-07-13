@@ -1,0 +1,24 @@
+# ========================
+# Python / FastAPI
+# ========================
+venv/
+__pycache__/
+*.pyc
+
+# ========================
+# Node.js / Express
+# ========================
+node_modules/
+express-server/uploads/*
+!express-server/uploads/.gitkeep 
+
+# ========================
+# Environment / Secrets
+# ========================
+.env
+
+# ========================
+# OS / System
+# ========================
+.DS_Store
+Thumbs.db

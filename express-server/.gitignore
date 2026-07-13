@@ -1,0 +1,9 @@
+# 의존성 모듈
+node_modules/
+
+# 환경 변수 및 비밀번호
+.env
+
+# 테스트 및 실제 업로드된 이미지 파일 제외
+uploads/*
+!.gitignore

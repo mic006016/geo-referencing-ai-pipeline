@@ -1,0 +1,27 @@
+services:
+  # 1. 로컬 공간 데이터베이스 (MySQL 8.0)
+  geo-db:
+    image: mysql:8.0
+    container_name: geo-mysql
+    ports:
+      - "3311:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: 1234
+      MYSQL_DATABASE: geo_db
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command:
+      - --default-authentication-plugin=mysql_native_password
+
+  # 2. 로컬 비동기 메시지 브로커 (Redis)
+  geo-queue:
+    image: redis:7.0-alpine
+    container_name: geo-redis
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mysql_data:
+  redis_data:

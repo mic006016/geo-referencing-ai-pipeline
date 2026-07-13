@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Geo-AI 도로 위험물 모니터링 시스템</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        display: flex;
+        height: 100vh;
+      }
+      #sidebar {
+        width: 350px;
+        background: #2c3e50;
+        color: white;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+      }
+      #map {
+        flex: 1;
+        height: 100%;
+      }
+      h1 {
+        margin-top: 0;
+        font-size: 1.5rem;
+        border-bottom: 2px solid #34495e;
+        padding-bottom: 10px;
+        color: #ecf0f1;
+      }
+      .card {
+        background: #34495e;
+        padding: 15px;
+        border-radius: 6px;
+      }
+      .card h3 {
+        margin-top: 0;
+        color: #1abc9c;
+      }
+      input[type="file"] {
+        display: none;
+      }
+      .custom-file-upload {
+        display: block;
+        background: #1abc9c;
+        color: white;
+        text-align: center;
+        padding: 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: background 0.2s;
+      }
+      .custom-file-upload:hover {
+        background: #16a085;
+      }
+      #upload-status {
+        margin-top: 10px;
+        font-size: 0.9rem;
+        color: #bdc3c7;
+      }
+      #status-counts {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #f1c40f;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="sidebar">
+      <h1>🚧 Geo-AI 관제 센터</h1>
+
+      <div class="card">
+        <h3>📸 도로 균열 이미지 업로드</h3>
+        <p style="font-size: 0.85rem; color: #ccc">
+          GPS 정보(Exif)가 포함된 노면 사진을 업로드하면 시스템이 실시간으로
+          위치를 파악하고 AI 분석을 요청합니다.
+        </p>
+        <form id="upload-form">
+          <label for="image-input" class="custom-file-upload"
+            >📁 사진 선택 및 업로드</label
+          >
+          <input type="file" id="image-input" accept="image/*" />
+        </form>
+        <div id="upload-status"></div>
+      </div>
+
+      <div class="card">
+        <h3>📊 관제 현황</h3>
+        <div id="status-counts">조회 데이터: 0건</div>
+        <p style="font-size: 0.8rem; color: #bdc3c7; margin-top: 10px">
+          지도를 드래그하거나 확대/축소하면 현 화면 범위(Bounding Box) 내의 위험
+          요소를 탐색합니다.
+        </p>
+      </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      // 대한민국 중심 부근 데이터가 있던 위경도로 초기화
+      const map = L.map("map").setView([36.011, 127.029], 14);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap contributors",
+      }).addTo(map);
+
+      // 마커들을 관리할 GeoJSON 레이어
+      let geojsonLayer = L.geoJSON(null, {
+        pointToLayer: function (feature, latlng) {
+          const status = feature.properties.status;
+          let color = "#ffbd33"; // QUEUED (대기중 - 노란색)
+          if (status === "VERIFIED") color = "#ff333c"; // VERIFIED (분석완료 - 빨간색)
+          if (status === "PROCESSING") color = "#33beff"; // 분석중 - 파란색
+
+          return L.circleMarker(latlng, {
+            radius: 9,
+            fillColor: color,
+            color: "#fff",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.85,
+          });
+        },
+        onEachFeature: function (feature, layer) {
+          const p = feature.properties;
+          layer.bindPopup(`
+                    <div style="font-family: sans-serif; line-height: 1.4;">
+                        <b style="font-size: 1.1rem; color: #2c3e50;">위험 요소 정보</b><br>
+                        <hr style="border: 0; border-top: 1px solid #eee; margin: 5px 0;">
+                        <b>태스크 ID:</b> ${p.taskId.substring(0, 8)}...<br>
+                        <b>상태:</b> <span style="font-weight:bold; color:${p.status === "VERIFIED" ? "#e74c3c" : "#f39c12"}">${p.status}</span><br>
+                        <b>AI 진단:</b> ${p.damageType || "분석 대기 중"}<br>
+                        <b>확신도:</b> ${p.confidence ? (p.confidence * 100).toFixed(1) + "%" : "-"}<br>
+                        <b>등록 시간:</b> ${new Date(p.createdAt).toLocaleTimeString()}
+                    </div>
+                `);
+        },
+      }).addTo(map);
+
+      // 1. 현재 지도 영역 데이터 로드 함수
+      function fetchMapData() {
+        const bounds = map.getBounds();
+        const minLon = bounds.getWest();
+        const minLat = bounds.getSouth();
+        const maxLon = bounds.getEast();
+        const maxLat = bounds.getNorth();
+
+        fetch(
+          `/api/spatial/bbox?minLon=${minLon}&minLat=${minLat}&maxLon=${maxLon}&maxLat=${maxLat}`,
+        )
+          .then((res) => {
+            if (!res.ok) throw new Error("네트워크 응답 에러");
+            return res.json();
+          })
+          .then((geoJsonData) => {
+            geojsonLayer.clearLayers();
+            geojsonLayer.addData(geoJsonData);
+            document.getElementById("status-counts").innerHTML =
+              `현재 화면 내 위험 요소: <b>${geoJsonData.features.length}</b>건`;
+          })
+          .catch((err) => console.error("데이터 로드 실패:", err));
+      }
+
+      // 지도가 움직일 때마다 백엔드 공간 쿼리 가동
+      map.on("moveend", fetchMapData);
+      fetchMapData(); // 초기 로드
+
+      // 2. 파일 업로드 이벤트 처리
+      document
+        .getElementById("image-input")
+        .addEventListener("change", function (e) {
+          const file = e.target.files[0];
+          if (!file) return;
+
+          const statusDiv = document.getElementById("upload-status");
+          statusDiv.innerHTML = "⏳ 이미지 분석 및 업로드 중...";
+          statusDiv.style.color = "#f1c40f";
+
+          const formData = new FormData();
+          formData.append("image", file); // 백엔드 multer 필드명('image')과 일치 시킴
+
+          // 현재 가지고 계신 이미지 업로드 라우터 주소로 요청 (예: /api/image/upload 또는 /api/analysis)
+          fetch("/api/image/upload", {
+            method: "POST",
+            body: formData,
+          })
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.success) {
+                statusDiv.innerHTML = "✅ 업로드 성공! 대기열 진입.";
+                statusDiv.style.color = "#2ecc71";
+
+                // 조금 뒤(AI 연산 및 웹훅 완료 시점) 지도를 새로고침하여 마커 확인
+                setTimeout(fetchMapData, 1500);
+              } else {
+                statusDiv.innerHTML = `❌ 실패: ${data.message || "GPS 정보가 없을 수 있습니다."}`;
+                statusDiv.style.color = "#e74c3c";
+              }
+            })
+            .catch((err) => {
+              console.error(err);
+              statusDiv.innerHTML = "❌ 서버 통신 오류 발생";
+              statusDiv.style.color = "#e74c3c";
+            });
+        });
+    </script>
+  </body>
+</html>
