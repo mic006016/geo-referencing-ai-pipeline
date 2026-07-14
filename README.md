@@ -11,7 +11,7 @@
 - **Frontend:** HTML/CSS/JS, Leaflet.js (지도 시각화), Proj4js (실시간 좌표계 투영 변환)
 - **Backend API:** Node.js, Express, Sequelize ORM
 - **Message Broker:** Redis (비동기 작업 대기열 관리)
-- **AI Worker:** Python, YOLOv8, Rasterio
+- **AI Worker:** Python, YOLOv8, PIL
 - **Database:** MySQL 8.0 (Spatial Database, SRID 4326, R-Tree Index)
 
 ## ⚙️ 시스템 아키텍처 (워크플로우)
