@@ -3,13 +3,15 @@ import os
 from ultralytics import YOLO
 from PIL import Image
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
+
 class GeoAIModel:
     def __init__(self):
-        print("위성 이미지 객체 탐지용 YOLOv8 모델 로드 중...")
-        # 전이 학습(Fine-tuning) 전 테스트를 위해 기본 가중치(COCO) 사용
-        # AI HUB 토지피복지도로 학습 유무에 따라 커스텀 가중치 경로로 대체 가능
-        self.model = YOLO("yolov8n.pt") 
-        print("✅ YOLOv8 추론 엔진 준비 완료!")
+        print("커스텀 GeoAI YOLOv8 모델 로드 중...")
+        self.model = YOLO(MODEL_PATH) 
+        print("✅ 커스텀 추론 엔진 준비 완료!")
 
     def detect_and_map(self, image_path: str, extent: dict):
         if not os.path.exists(image_path):
@@ -37,6 +39,8 @@ class GeoAIModel:
                 x_pixel, y_pixel, w_pixel, h_pixel = box.xywh[0].tolist()
                 conf = float(box.conf[0].item())
                 cls_id = int(box.cls[0].item())
+                
+                # 커스텀 모델이 반환하는 클래스 이름 (Building, Road 등)
                 label = self.model.names[cls_id]
 
                 # 💡 핵심: 픽셀 좌표 -> 실제 GIS 공간 좌표 변환 (Affine Mapping)

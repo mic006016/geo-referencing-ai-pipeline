@@ -1,9 +1,8 @@
-// routes/spatial.js
 const express = require("express");
 const router = express.Router();
 
 module.exports = (sequelize) => {
-  const RoadDamage = sequelize.models.RoadDamage;
+  const { SpatialObject } = sequelize.models;
 
   /**
    * GET /api/spatial/bbox
@@ -36,7 +35,7 @@ module.exports = (sequelize) => {
       // ST_Within 또는 ST_Contains 공간 함수를 활용하여 공간 인덱스(R-Tree) 태우기
       // coordinates가 주어진 폴리곤 영역 내에(ST_Within) 포함되는지 검사
       // 💡 DB 컬럼이 SRID 0이므로, ST_GeomFromText의 두 번째 인자도 0으로 맞춤
-      const damages = await RoadDamage.findAll({
+      const objects = await SpatialObject.findAll({
         where: sequelize.literal(
           `ST_Within(coordinates, ST_GeomFromText('${wktPolygon}', 0))`,
         ),
@@ -45,16 +44,15 @@ module.exports = (sequelize) => {
       // 글로벌 GIS 표준인 GeoJSON FeatureCollection 규격으로 래핑
       const geojsonOutput = {
         type: "FeatureCollection",
-        features: damages.map((damage) => ({
+        features: objects.map((obj) => ({
           type: "Feature",
-          geometry: damage.coordinates, // Sequelize가 자동으로 GeoJSON Point 객체 형태로 반환
+          geometry: obj.coordinates, // Sequelize가 자동으로 GeoJSON Point 객체 형태로 반환
           properties: {
-            id: damage.id,
-            taskId: damage.taskId,
-            damageType: damage.damageType,
-            confidence: damage.confidence,
-            status: damage.status,
-            createdAt: damage.createdAt,
+            id: obj.id,
+            taskId: obj.taskId,
+            objectType: obj.objectType,
+            confidence: obj.confidence,
+            createdAt: obj.createdAt,
           },
         })),
       };
@@ -62,7 +60,8 @@ module.exports = (sequelize) => {
       return res.status(200).json(geojsonOutput);
     } catch (error) {
       console.error("❌ 공간 범위 조회 실패:", error);
-      return res.status(500).json({ success: false, message: error.message });
+      // 프론트엔드가 파싱 에러(Invalid GeoJSON)를 뱉지 않도록 빈 FeatureCollection을 반환하는 방어 코드
+      return res.status(200).json({ type: "FeatureCollection", features: [] });
     }
   });
 

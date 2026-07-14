@@ -1,0 +1,10 @@
+path: /content
+train: Training/images
+val: Validation/images
+
+names:
+  0: Building
+  1: GreenHouse
+  2: Road
+  3: RicePaddy
+  4: Field

@@ -15,9 +15,10 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", 16379))
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def start_worker():
-    # 1. Redis 연결 설정
+    # 1. Redis 연결 설정 및 핑(Ping) 테스트
     try:
         r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0, decode_responses=True)
+        r.ping()
         print(f"✅ Redis 큐에 연결! ({REDIS_HOST}:{REDIS_PORT})")
     except Exception as e:
         print(f"❌ Redis 연결 실패: {e}")
@@ -38,12 +39,20 @@ def start_worker():
                 
                 task_id = payload.get("taskId")
                 relative_image_path = payload.get("imagePath")
-                lat = payload.get("latitude")
-                lon = payload.get("longitude")
+                extent = payload.get("extent")
+                
+                # 상대 경로를 조합해 안전한 절대 경로 확보
+                absolute_image_path = os.path.join(BASE_DIR, relative_image_path)
+                
+                # BBox를 통해 중심 좌표 계산
+                center_lat = (extent["minLat"] + extent["maxLat"]) / 2
+                center_lon = (extent["minLon"] + extent["maxLon"]) / 2
                 
                 print("\n==================================================")
                 print(f"[Queue Pop] 새로운 작업 수신 완료! Task ID: {task_id}")
-                print(f"지리 좌표 추출값: 위도 {lat}, 경도 {lon}")
+                print(f"🌍 타일 중심 좌표: 위도 {center_lat:.6f}, 경도 {center_lon:.6f}")
+                print(f"📂 이미지 절대 경로: {absolute_image_path}")
+                print("==================================================")
                 
                 # Node.js 서버가 저장한 실제 이미지 파일 절대 경로 계산
                 absolute_image_path = os.path.join(BASE_DIR, "express-server", relative_image_path)
@@ -51,42 +60,36 @@ def start_worker():
                 print("==================================================")
                                
                 
-                # 3. [AI 모델 추론구간] YOLOv8 연산 개시
-                def process_task(payload_str):
-                  try:
-                      task_data = json.loads(payload_str)
-                      task_id = task_data["taskId"]
-                      image_path = task_data["imagePath"]
-                      extent = task_data["extent"] # Node.js가 넘겨준 공간 메타데이터
+                # 5. [AI 모델 추론구간]
+                result = geo_detector.detect_and_map(absolute_image_path, extent)
 
-                      print(f"[Task 팝] 분석 시작. ID: {task_id}")
-                      
-                      # AI 분석 및 GIS 좌표 변환 동시 수행
-                      result = geo_detector.detect_and_map(image_path, extent)
+                if result["success"]:
+                    result_payload = {
+                        "taskId": task_id,
+                        "status": "COMPLETED",
+                        "detectedObjects": result["objects"] 
+                    }
+                else:
+                    print(f"⚠️ YOLO 분석 실패: {result.get('error')}")
+                    result_payload = {
+                        "taskId": task_id, 
+                        "status": "FAILED", 
+                        "detectedObjects": []
+                    }
 
-                      if result["success"]:
-                          # Express 서버로 넘겨줄 최종 정제 데이터
-                          result_payload = {
-                              "taskId": task_id,
-                              "status": "COMPLETED",
-                              "detectedObjects": result["objects"] # 변환된 위경도가 포함된 리스트
-                          }
-                      else:
-                          result_payload = {"taskId": task_id, "status": "FAILED", "detectedObjects": []}
-
-                      # Express API 서버의 결과 저장 엔드포인트로 전송
-                      response = requests.post("http://localhost:3000/api/results/save", json=result_payload)
-                      if response.status_code == 200:
-                          print(f"✅ [Task 완료] {len(result['objects'])}개 객체 공간 매핑 및 전송 성공!")
-
-                  except Exception as e:
-                      print(f"❌ 워커 처리 중 치명적 오류: {e}")
+                # 6. Express API 서버로 결과 전송
+                response = requests.post("http://localhost:3000/api/results/save", json=result_payload)
+                
+                if response.status_code in [200, 201]:
+                    print(f"✅ [Task 완료] {len(result['objects'])}개 객체 공간 매핑 및 전송 성공!")
+                else:
+                    print(f"⚠️ [전송 실패] 백엔드 응답 코드: {response.status_code}")
 
         except redis.ConnectionError:
             print("❌ Redis 서버와의 연결이 끊어졌습니다. 5초 후 재시도합니다...")
             time.sleep(5)
         except Exception as e:
-            print(f"⚠️ 워커 루프 중 예외 발생: {e}")
+            print(f"❌ 워커 루프 중 예기치 않은 예외 발생: {e}")
             time.sleep(1)
 
 if __name__ == "__main__":
