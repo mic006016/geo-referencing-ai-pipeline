@@ -12,7 +12,7 @@
 - **Backend API:** Node.js, Express, Sequelize ORM
 - **Message Broker:** Redis (비동기 작업 대기열 관리)
 - **AI Worker:** Python, YOLOv8, PIL
-- **Database:** MySQL 8.0 (Spatial Database, SRID 4326, R-Tree Index)
+- **Database:** MySQL 8.0 (Spatial Database, R-Tree Index)
 
 ## ⚙️ 시스템 아키텍처 (워크플로우)
 
@@ -42,4 +42,5 @@
 ### 4. MySQL 8.0 공간 DB SRID 충돌(Error 3033) 해결
 
 - **문제:** `ST_Within` 함수를 사용해 지도 화면 내의 객체를 검색할 때, `Different SRIDs: 0 and 4326` 에러 발생.
-- **해결:** MySQL 8.0의 엄격해진 공간 참조 시스템(SRS) 정책을 파악하고, DB에 저장된 평면 좌표(SRID 0) 규격에 맞추어 `ST_GeomFromText` 함수의 X, Y(Lon, Lat) 순서와 SRID 파라미터를 0으로 일치시켜 R-Tree 공간 인덱스 기반의 고속 검색을 구현함.
+- **원인 파악:** Sequelize ORM으로 공간 테이블(GEOMETRY)을 자동 생성할 때, 공간 참조 시스템(SRS)이 MySQL의 기본값인 SRID 0(평면 좌표계)으로 설정됨. 그러나 조회 쿼리는 SRID 4326(WGS84 위경도) 기준으로 폴리곤을 생성하여 비교하려 했기 때문에 MySQL 8.0의 엄격한 타입 검사에서 충돌이 발생한 것을 확인함.
+- **해결:** DB 마이그레이션 없이 쿼리 단에서 유연하게 해결하기 위해, ST_GeomFromText 함수의 X, Y 파라미터를 Lon, Lat 순서로 정렬하고 SRID 인자를 0으로 일치시킴. 이를 통해 기존 R-Tree 공간 인덱스를 그대로 활용하면서 고속 바운딩 박스(BBox) 검색을 성공적으로 구현함.
