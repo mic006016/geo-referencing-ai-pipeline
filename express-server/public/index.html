@@ -52,6 +52,7 @@
       input[type="file"] {
         display: none;
       }
+
       .custom-file-upload {
         display: block;
         background: #d2dae2;
@@ -62,15 +63,28 @@
         cursor: pointer;
         font-weight: bold;
         transition: background 0.2s;
+        border: none;
+        width: 100%;
+        box-sizing: border-box;
       }
       .custom-file-upload:hover {
         background: #bcbcbc;
       }
-      #upload-status {
+      .btn-submit {
+        background: #0be881;
+        color: #1e272e;
         margin-top: 10px;
+      }
+      .btn-submit:hover {
+        background: #09c46e;
+      }
+
+      #upload-status {
+        margin-top: 15px;
         font-size: 0.9rem;
         color: #d2dae2;
         white-space: pre-wrap;
+        line-height: 1.4;
       }
       #status-counts {
         font-size: 1.1rem;
@@ -78,7 +92,6 @@
         color: #ffd32a;
       }
 
-      /* 범례(Legend) 스타일 */
       .legend {
         display: flex;
         flex-wrap: wrap;
@@ -95,25 +108,38 @@
         width: 12px;
         height: 12px;
         border-radius: 50%;
+        border: 1px solid rgba(0, 0, 0, 0.2);
       }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
   </head>
   <body>
     <div id="sidebar">
       <h1>🛰️ Geo-AI 공간 매핑 센터</h1>
 
       <div class="card">
-        <h3>📸 위성/항공 타일 객체 탐지 및 매핑</h3>
+        <h3>📸 위성 데이터 실제 좌표 매핑</h3>
         <p style="font-size: 0.85rem; color: #d2dae2; line-height: 1.4">
-          지도 화면 중심을 기준으로 타일 영역이 자동 설정됩니다.<br />
-          원하는 위치로 지도를 이동한 뒤, 이미지를 업로드하세요.
+          이미지와 메타데이터(JSON)를 각각 선택한 후 전송을 누르면,
+          <b>실제 촬영된 위치로 이동</b>하며 매핑됩니다.
         </p>
-        <form id="upload-form">
-          <label for="image-input" class="custom-file-upload"
-            >📁 이미지 선택 및 비동기 분석</label
+
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <label for="image-input" class="custom-file-upload" id="label-image"
+            >1. 🖼️ 위성 이미지 선택 (.jpg)</label
           >
-          <input type="file" id="image-input" accept="image/*" multiple />
-        </form>
+          <input type="file" id="image-input" accept="image/*" />
+
+          <label for="json-input" class="custom-file-upload" id="label-json"
+            >2. 📄 메타데이터 선택 (.json)</label
+          >
+          <input type="file" id="json-input" accept=".json" />
+
+          <button id="btn-submit" class="custom-file-upload btn-submit">
+            🚀 매핑 및 분석 시작
+          </button>
+        </div>
+
         <div id="upload-status">대기 중...</div>
       </div>
 
@@ -123,23 +149,23 @@
 
         <div class="legend">
           <div class="legend-item">
-            <div class="color-box" style="background: #ff3f34"></div>
+            <div class="color-box" style="background: #ffb3ba"></div>
             건물
           </div>
           <div class="legend-item">
-            <div class="color-box" style="background: #0fbcf9"></div>
+            <div class="color-box" style="background: #bae1ff"></div>
             도로
           </div>
           <div class="legend-item">
-            <div class="color-box" style="background: #0be881"></div>
+            <div class="color-box" style="background: #baffc9"></div>
             논
           </div>
           <div class="legend-item">
-            <div class="color-box" style="background: #ffd32a"></div>
+            <div class="color-box" style="background: #ffffba"></div>
             밭
           </div>
           <div class="legend-item">
-            <div class="color-box" style="background: #d2dae2"></div>
+            <div class="color-box" style="background: #e0bbe4"></div>
             비닐하우스
           </div>
         </div>
@@ -150,48 +176,52 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-      // 1. 지도 초기화 (위성 지도 타일 사용)
-      const map = L.map("map").setView([37.5665, 126.978], 15);
+      // 1. Proj4js 좌표계 정의 (EPSG:5186)
+      proj4.defs(
+        "EPSG:5186",
+        "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=600000 +ellps=GRS80 +units=m +no_defs",
+      );
 
-      // 구글 위성 지도(Vworld 등 대체 가능)로 배경 변경하여 리얼리티 극대화
+      // 2. 지도 초기화
+      const map = L.map("map").setView([37.5665, 126.978], 10);
       L.tileLayer("http://mt0.google.com/vt/lyrs=s&hl=kr&x={x}&y={y}&z={z}", {
         attribution: "© Google",
         maxZoom: 20,
       }).addTo(map);
 
-      // 객체 타입별 색상 매핑 함수
+      // 💡 파스텔 톤 색상 매핑 함수
       function getColorByType(type) {
         switch (type) {
           case "Building":
           case "건물":
-            return "#ff3f34";
+            return "#ffb3ba"; // 파스텔 레드/핑크
           case "Road":
           case "도로":
-            return "#0fbcf9";
+            return "#bae1ff"; // 파스텔 블루
           case "RicePaddy":
           case "논":
-            return "#0be881";
+            return "#baffc9"; // 파스텔 그린
           case "Field":
           case "밭":
-            return "#ffd32a";
+            return "#ffffba"; // 파스텔 옐로우
           case "GreenHouse":
           case "비닐하우스":
-            return "#d2dae2";
+            return "#e0bbe4"; // 파스텔 퍼플
           default:
             return "#ffffff";
         }
       }
 
-      // 2. AI가 탐지한 객체를 그릴 GeoJSON 레이어
+      // GeoJSON 레이어
       let geojsonLayer = L.geoJSON(null, {
         pointToLayer: function (feature, latlng) {
           const type =
             feature.properties.objectType || feature.properties.damageType;
           return L.circleMarker(latlng, {
-            radius: 4,
+            radius: 5,
             fillColor: getColorByType(type),
-            color: "#000",
-            weight: 1,
+            color: "#333", // 테두리를 약간 진하게 주어 파스텔 톤이 지도에서 잘 보이게 함
+            weight: 1.5,
             opacity: 1,
             fillOpacity: 0.9,
           });
@@ -201,15 +231,14 @@
           layer.bindPopup(`
             <div style="line-height: 1.4;">
               <b style="font-size: 1.1rem; color: #1e272e;">탐지 객체 정보</b><hr style="margin: 5px 0;">
-              <b>분류:</b> <span style="color:${getColorByType(p.objectType)}">${p.objectType || "N/A"}</span><br>
+              <b>분류:</b> <span style="color:${getColorByType(p.objectType)}; font-weight:bold; text-shadow: 0 0 1px #000;">${p.objectType || "N/A"}</span><br>
               <b>AI 확신도:</b> ${p.confidence ? (p.confidence * 100).toFixed(1) + "%" : "-"}<br>
-              <b>Task ID:</b> ${p.taskId ? p.taskId.substring(0, 8) + "..." : "-"}<br>
             </div>
           `);
         },
       }).addTo(map);
 
-      // 3. 현재 화면 바운딩 박스 기준으로 DB 데이터 조회 (BBox 쿼리)
+      // 데이터 패치 함수
       function fetchMapData() {
         const bounds = map.getBounds();
         fetch(
@@ -224,91 +253,141 @@
           })
           .catch((err) => console.error("데이터 로드 실패:", err));
       }
-
       map.on("moveend", fetchMapData);
-      fetchMapData();
 
-      // 4. 다중 이미지 업로드 및 공간 범위 시뮬레이션
+      // 💡 개별 파일 업로드 로직
+      let selectedImage = null;
+      let selectedJson = null;
+
+      // 이미지 선택 시 파일명 표시
+      document.getElementById("image-input").addEventListener("change", (e) => {
+        if (e.target.files[0]) {
+          selectedImage = e.target.files[0];
+          document.getElementById("label-image").innerText =
+            `✅ 이미지: ${selectedImage.name.substring(0, 15)}...`;
+          document.getElementById("label-image").style.background = "#fff";
+        }
+      });
+
+      // JSON 선택 시 파일명 표시
+      document.getElementById("json-input").addEventListener("change", (e) => {
+        if (e.target.files[0]) {
+          selectedJson = e.target.files[0];
+          document.getElementById("label-json").innerText =
+            `✅ 메타데이터: ${selectedJson.name.substring(0, 15)}...`;
+          document.getElementById("label-json").style.background = "#fff";
+        }
+      });
+
+      const readFileAsText = (file) =>
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = (e) => reject(e);
+          reader.readAsText(file);
+        });
+
+      // 💡 분석 시작 버튼 클릭 이벤트
       document
-        .getElementById("image-input")
-        .addEventListener("change", async function (e) {
-          const files = e.target.files;
-          if (files.length === 0) return;
-
-          const statusDiv = document.getElementById("upload-status");
-          statusDiv.innerHTML = `🚀 ${files.length}장 비동기 업로드 시작...`;
-          statusDiv.style.color = "#ffd32a";
-
-          // 데모 시각화를 위해 현재 지도 중심을 기준으로 가상의 Bounding Box 생성
-          // (실제 프로덕션에서는 이미지와 함께 META.json 파일의 좌표를 파싱해서 보내야 함)
-          const center = map.getCenter();
-          const offset = 0.002; // 타일 하나의 대략적인 위경도 크기
-          const mockBounds = {
-            minLon: center.lng - offset,
-            maxLon: center.lng + offset,
-            minLat: center.lat - offset,
-            maxLat: center.lat + offset,
-          };
-
-          let successCount = 0;
-
-          // 여러 장의 파일을 비동기로 순차/병렬 전송
-          for (let i = 0; i < files.length; i++) {
-            const formData = new FormData();
-            formData.append("image", files[i]);
-            formData.append("minLon", mockBounds.minLon);
-            formData.append("minLat", mockBounds.minLat);
-            formData.append("maxLon", mockBounds.maxLon);
-            formData.append("maxLat", mockBounds.maxLat);
-
-            try {
-              const res = await fetch("/api/images/upload", {
-                method: "POST",
-                body: formData,
-              });
-              const data = await res.json();
-
-              if (data.success) {
-                successCount++;
-
-                // 1. 지도 위에 반투명 이미지 얹기
-                const imageUrl = URL.createObjectURL(files[i]);
-                const imageBounds = [
-                  [mockBounds.minLat, mockBounds.minLon],
-                  [mockBounds.maxLat, mockBounds.maxLon],
-                ];
-                L.imageOverlay(imageUrl, imageBounds, { opacity: 0.65 }).addTo(
-                  map,
-                );
-
-                // 2. 업로드한 사진의 중심 위치로 지도 부드럽게 이동시키기
-                const centerLat = (mockBounds.minLat + mockBounds.maxLat) / 2;
-                const centerLon = (mockBounds.minLon + mockBounds.maxLon) / 2;
-
-                // flyTo(중심좌표, 줌레벨, {옵션})를 쓰면 화면이 비행기 타듯 부드럽게 이동
-                map.flyTo([centerLat, centerLon], 16, {
-                  animate: true,
-                  duration: 1.5,
-                });
-              }
-            } catch (err) {
-              console.error("업로드 에러:", err);
-            }
-
-            // UI 진행상황 업데이트
-            statusDiv.innerHTML = `⏳ 처리 중... (${i + 1}/${files.length})`;
+        .getElementById("btn-submit")
+        .addEventListener("click", async () => {
+          if (!selectedImage || !selectedJson) {
+            alert("이미지와 메타데이터(.json) 파일을 모두 선택해주세요!");
+            return;
           }
 
-          statusDiv.innerHTML = `✅ ${successCount}장 대기열 등록 완료!<br>AI 워커가 분석을 완료하면 지도에 마커가 표시됩니다.`;
-          statusDiv.style.color = "#0be881";
+          const statusDiv = document.getElementById("upload-status");
+          statusDiv.innerHTML = `⏳ 파일 파싱 및 공간 좌표 변환 중...`;
+          statusDiv.style.color = "#ffd32a";
 
-          // AI 워커 연산 시간을 고려하여 2초 단위로 몇 번 새로고침(폴링)
-          let refreshCount = 0;
-          const interval = setInterval(() => {
-            fetchMapData();
-            refreshCount++;
-            if (refreshCount > 5) clearInterval(interval); // 10초 후 폴링 종료
-          }, 2000);
+          try {
+            // 1. JSON 파일 파싱하여 물리적 범위 계산
+            const jsonText = await readFileAsText(selectedJson);
+            const metaData = JSON.parse(jsonText)[0];
+
+            const [x_min, y_max] = metaData.coordinates
+              .split(",")
+              .map((s) => parseFloat(s.trim()));
+            const res = metaData.img_resolution;
+            const x_max = x_min + metaData.img_width * res;
+            const y_min = y_max - metaData.img_height * res;
+
+            // 2. Proj4js를 이용한 좌표계 변환 (EPSG:5186 ➔ EPSG:4326)
+            const sw = proj4("EPSG:5186", "EPSG:4326", [x_min, y_min]);
+            const ne = proj4("EPSG:5186", "EPSG:4326", [x_max, y_max]);
+
+            const realBounds = {
+              minLon: sw[0],
+              minLat: sw[1],
+              maxLon: ne[0],
+              maxLat: ne[1],
+            };
+
+            // 3. 백엔드로 데이터 전송
+            const formData = new FormData();
+            formData.append("image", selectedImage);
+            formData.append("minLon", realBounds.minLon);
+            formData.append("minLat", realBounds.minLat);
+            formData.append("maxLon", realBounds.maxLon);
+            formData.append("maxLat", realBounds.maxLat);
+
+            const response = await fetch("/api/images/upload", {
+              method: "POST",
+              body: formData,
+            });
+            const result = await response.json();
+
+            if (result.success) {
+              // 4. 지도 위에 투명하게 이미지 얹기
+              const imageUrl = URL.createObjectURL(selectedImage);
+              const imageBounds = [
+                [realBounds.minLat, realBounds.minLon],
+                [realBounds.maxLat, realBounds.maxLon],
+              ];
+              L.imageOverlay(imageUrl, imageBounds, { opacity: 0.85 }).addTo(
+                map,
+              );
+
+              // 5. 계산된 진짜 좌표의 중심으로 비행(flyTo)
+              const centerLat = (realBounds.minLat + realBounds.maxLat) / 2;
+              const centerLon = (realBounds.minLon + realBounds.maxLon) / 2;
+              map.flyTo([centerLat, centerLon], 16, {
+                animate: true,
+                duration: 2,
+              });
+
+              statusDiv.innerHTML = `✅ 좌표 기반 매핑 완료! ✈️<br>AI 백그라운드 분석 대기 중...`;
+              statusDiv.style.color = "#0be881";
+
+              // 6. 폴링으로 AI 분석 결과 확인
+              let refreshCount = 0;
+              const interval = setInterval(() => {
+                fetchMapData();
+                refreshCount++;
+                if (refreshCount > 6) clearInterval(interval); // 12초간 대기 후 폴링 종료
+              }, 2000);
+
+              // 입력 폼 리셋
+              selectedImage = null;
+              selectedJson = null;
+              document.getElementById("label-image").innerText =
+                "1. 🖼️ 위성 이미지 선택 (.jpg)";
+              document.getElementById("label-json").innerText =
+                "2. 📄 메타데이터 선택 (.json)";
+              document.getElementById("label-image").style.background =
+                "#d2dae2";
+              document.getElementById("label-json").style.background =
+                "#d2dae2";
+              document.getElementById("image-input").value = "";
+              document.getElementById("json-input").value = "";
+            } else {
+              throw new Error(result.message || "서버 응답 오류");
+            }
+          } catch (err) {
+            console.error(err);
+            statusDiv.innerHTML = `❌ 오류 발생: ${err.message}`;
+            statusDiv.style.color = "#ff3f34";
+          }
         });
     </script>
   </body>
