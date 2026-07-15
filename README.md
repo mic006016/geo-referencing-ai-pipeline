@@ -1,6 +1,8 @@
 # 🛰️ Geo-AI: 비동기 메시지 큐 기반 공간 객체 탐지 및 매핑 파이프라인
 
+🎥 **기능 구현**
 
+https://github.com/user-attachments/assets/e2839254-2979-4493-9fc4-5b2bc577cf07
 
 ## 🚀 프로젝트 소개
 
