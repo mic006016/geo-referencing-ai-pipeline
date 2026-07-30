@@ -1,4 +1,5 @@
 ## 🛰️ Geo-AI: 비동기 메시지 큐 기반 공간 객체 탐지 및 매핑 파이프라인
+> 대용량 항공/위성 이미지와 공간 메타데이터를 활용하여 지표면의 객체(건물, 도로, 논, 밭 등)를 탐지하고, 이를 실세계 지리 좌표로 변환하여 지도 위에 매핑하는 **End-to-End(E2E) Geo-AI 웹 서비스**입니다. 데이터 중심(Data-Centric)의 가설 검증으로 탐지 모델을 고도화하였으며, AI 추론의 병목 현상을 방지하기 위해 Redis 기반의 비동기 메시지 큐 아키텍처를 도입하여 대규모 트래픽 환경에서도 안정적인 서버 응답성을 확보했습니다.
 
 🎥 **기능 구현**
 
@@ -6,40 +7,46 @@ https://github.com/user-attachments/assets/e2839254-2979-4493-9fc4-5b2bc577cf07
 
 ---
 
-### 🚀 프로젝트 소개
+### 🌟 핵심 아키텍처 (Microservice Architecture)
 
-대용량 항공/위성 이미지와 공간 메타데이터를 활용하여 지표면의 객체(건물, 도로, 논, 밭 등)를 탐지하고, 이를 실세계 지리 좌표로 변환하여 지도 위에 매핑하는 **End-to-End(E2E) Geo-AI 웹 서비스**입니다. AI 추론의 병목 현상을 방지하기 위해 Redis 기반의 비동기 메시지 큐 아키텍처를 도입하여 대규모 트래픽 환경에서도 안정적인 서버 응답성을 확보했습니다.
+시스템의 확장성과 대용량 데이터 처리의 안정성을 극대화하기 위해 **Node.js(메인) - Redis(큐) - Python(AI 워커)** 형태의 분산 처리 시스템으로 설계되었습니다.
 
-### 🛠️ 기술 스택
+1. **Node.js (API Server):** 이미지 업로드 수신, 공간 메타데이터 파싱, 비동기 작업 큐잉, 공간 DB 적재 및 클라이언트 응답.
+2. **Redis (Message Queue):** 대규모 분석 요청에 대한 트래픽 완충 및 백그라운드 작업 대기열(List) 관리.
+3. **Python Worker (AI Inference):** 큐 감시(Blpop), YOLOv8 기반 공간 객체 탐지 및 아핀 변환(Affine Transform) 독립 수행.
 
-- **Frontend:** HTML/CSS/JS, Leaflet.js (지도 시각화), Proj4js (실시간 좌표계 투영 변환)
-- **Backend API:** Node.js, Express, Sequelize ORM
-- **Message Broker:** Redis (비동기 작업 대기열 관리)
-- **AI Worker:** Python, YOLOv8, PIL
-- **Database:** MySQL 8.0 (Spatial Database, R-Tree Index)
+### 🔥 담당 업무 및 핵심 기여 (My Contributions)
 
-### ⚙️ 시스템 아키텍처 (워크플로우)
+공간 데이터의 전처리부터 AI 모델 최적화, 그리고 비동기 백엔드 파이프라인 구축까지 전체 시스템의 흐름을 주도했습니다.
 
-1. **데이터 수집 및 투영 변환 (Client):** 사용자가 위성 이미지(.jpg)와 공간 메타데이터(.json)를 업로드. Client에서 `Proj4js`를 사용해 EPSG:5186(국가표준) 좌표를 EPSG:4326(WGS84)으로 변환 후 서버로 전송.
-2. **비동기 큐잉 (Node.js & Redis):** Express 서버는 이미지를 로컬 스토리지에 저장하고, 분석 작업을 Redis 대기열(Queue)에 Push하여 즉각적인 HTTP 응답 반환.
-3. **분산 AI 연산 (Python Worker):** 백그라운드 파이썬 워커가 Redis 큐를 모니터링(Blpop)하다가 작업을 수신. YOLOv8을 통해 이미지 내 객체의 픽셀 BBox를 추출하고, 이를 아핀 변환(Affine Transform)하여 실제 위경도 공간 좌표로 치환.
-4. **공간 데이터베이스 적재 (MySQL):** 분석 완료된 공간 객체 데이터를 MySQL Spatial Table에 저장.
-5. **실시간 렌더링 (Client):** 사용자의 화면 BBox를 기준으로 DB에 공간 쿼리(`ST_Within`)를 요청하여 렌더링.
+#### 1. AI & Data Engineering (데이터 중심 모델 최적화)
+- **공간 데이터 정규화:** 메타데이터의 절대 픽셀 좌표를 모델 학습 규격인 상대 좌표(0~1)로 자동 정규화하는 파이프라인 구축.
+- **오류 원인 규명:** 혼동 행렬(Confusion Matrix)과 Feature Map 분석을 통해, 모델이 지형의 '형태(고랑)'를 보지 못하고 단순 '색상(어두운 흙)'에 과적합되어 밭(Field)을 논(RicePaddy)으로 오분류하고 있음을 통계적으로 규명.
+- **가설 검증 및 성능 극대화 (A/B Test):** 입력 해상도를 한계치까지 상향(512 ➔ 1024)하여 물리적으로 손실되던 밭고랑의 픽셀 특징을 복원. 밭 클래스의 재현율을 3%p 높이고 전체 mAP50 수치를 86.4%로 끌어올리며 모델 최적화 달성.
 
-### 💡 핵심 트러블슈팅 및 문제 해결
+#### 2. Backend Engineering (비동기 처리 & 공간 DB)
+- **생산자-소비자(Producer-Consumer) 패턴 도입:** 무거운 AI 추론 작업을 백그라운드 Python Worker로 격리하여, 대규모 이미지 업로드 시 발생하는 Node.js 메인 서버의 Event Loop 블로킹 현상 100% 해결.
+- **공간 DB 인덱스(R-Tree) 고속화:** MySQL 8.0 GEOMETRY 타입을 활용해 공간 데이터베이스 구축. SRID 충돌(Error 3033) 문제를 쿼리 단에서 평면 좌표계(SRID 0)로 일치시켜 해결함으로써 ST_Within 내장 함수를 활용한 BBox 영역 고속 검색 구현.
 
-#### 1. 대용량 AI 분석으로 인한 메인 서버 병목 현상 해결
+#### 3. Frontend Engineering (Geo-Spatial UI)
+- **실시간 투영 변환:** Proj4js를 활용하여 원본 데이터의 국가표준좌표(EPSG:5186)를 브라우저단에서 WGS84(EPSG:4326) 글로벌 좌표계로 실시간 변환.
+- **인터랙티브 렌더링:** 사용자의 파일 업로드 즉시 Leaflet.js를 통해 실제 촬영 위치로 지도가 이동하며, AI 탐지 객체를 GeoJSON 다각형(Polygon) 형태로 렌더링.
 
-- **문제:** 단일 Node.js 서버에서 무거운 이미지 AI 연산을 직접 처리할 경우, Event Loop가 블로킹되어 다른 사용자의 API 요청을 처리하지 못하는 문제 발생.
-- **해결:** Redis의 `List` 자료구조를 활용한 **생산자-소비자(Producer-Consumer) 패턴** 도입. Node.js는 작업만 던지고 빠지며, 분리된 Python Worker가 백그라운드에서 AI 연산을 전담하도록 마이크로서비스 아키텍처(MSA) 형태로 분리하여 서버 가용성 100% 확보.
+### 🔄 핵심 데이터 흐름 (Data Flow & Pipeline)
 
-#### 2. 실세계 투영을 위한 공간 데이터 매핑 (Proj4js & Affine Transform)
+대용량 이미지 업로드부터 지도 표출까지의 파이프라인은 병목 없이 유기적으로 동작합니다.
+1. **Request:** 사용자가 화면에서 위성 이미지와 메타데이터 업로드 (클라이언트에서 좌표계 1차 투영 변환 수행).
+2. **Queueing:** 메인 API 서버는 이미지를 적재한 후 Redis 큐에 분석 Task를 Push하고 사용자에게 202(Accepted) 즉시 응답.
+3. **AI Inference:** 백그라운드 Python 워커가 큐에서 작업을 인계받아 객체 탐지 후, 픽셀 좌표를 실제 지구 위경도로 변환(Affine Mapping).
+4. **DB Bulk Insert:** 분석이 완료된 GeoJSON 형태의 공간 데이터를 API 서버로 전달하여 MySQL에 일괄 적재.
+5. **Rendering:** 사용자가 지도를 이동할 때마다, 현재 화면 BBox 범위 내의 객체만 R-Tree 공간 인덱스로 순식간에 검색하여 표출.
 
-- **문제:** YOLOv8 모델은 이미지 내의 '픽셀 좌표(x, y)'만 반환하므로, 이를 실제 지도에 띄울 수 없음.
-- **해결:** 프론트엔드에서 원본 데이터의 메타데이터(JSON)를 파싱 후 `Proj4js`로 실시간 좌표 변환을 수행하여 BBox 획득. 파이썬 워커는 이 BBox를 받아 객체의 픽셀 위치를 실제 지구 상의 위경도로 역산(아핀 변환)하는 로직을 구현함.
-
-#### 3. MySQL 8.0 공간 DB SRID 충돌(Error 3033) 해결
-
-- **문제:** `ST_Within` 함수를 사용해 지도 화면 내의 객체를 검색할 때, `Different SRIDs: 0 and 4326` 에러 발생.
-- **원인 파악:** Sequelize ORM으로 공간 테이블(GEOMETRY)을 자동 생성할 때, 공간 참조 시스템(SRS)이 MySQL의 기본값인 SRID 0(평면 좌표계)으로 설정됨. 그러나 조회 쿼리는 SRID 4326(WGS84 위경도) 기준으로 폴리곤을 생성하여 비교하려 했기 때문에 MySQL 8.0의 엄격한 타입 검사에서 충돌이 발생한 것을 확인함.
-- **해결:** DB 마이그레이션 없이 쿼리 단에서 유연하게 해결하기 위해, ST_GeomFromText 함수의 X, Y 파라미터를 Lon, Lat 순서로 정렬하고 SRID 인자를 0으로 일치시킴. 이를 통해 기존 R-Tree 공간 인덱스를 그대로 활용하면서 고속 바운딩 박스(BBox) 검색을 성공적으로 구현함.
+### 🛠 Tech Stack
+- Frontend
+  - HTML/CSS/JS, Leaflet.js, Proj4js
+- Backend (Microservices)
+  - Main Server: Node.js, Express, Sequelize ORM
+  - AI Server: Python, YOLOv8, OpenCV, Pillow(PIL)
+- Database & Message Broker
+  - MySQL 8.0 (Spatial Database)
+  - Redis
